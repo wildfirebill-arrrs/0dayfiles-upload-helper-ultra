@@ -24,31 +24,82 @@ from the command line.
 
 ## Install
 
+### 1. Install Node.js on your Ultra slot (one-time)
 ```bash
-# 1. Install Node.js on your Ultra slot (one-time)
 bash <(wget -qO- https://scripts.ultra.cc/util-v2/LanguageInstaller/Node-Installer/main.sh)
 # choose option 1 to install
+```
 
-# 2. Clone this repo
-git clone <your-fork> 0dayfiles-upload-helper-ultra
+### 2. Clone this repo
+```bash
+git clone https://github.com/wildfirebill-arrrs/0dayfiles-upload-helper-ultra.git
 cd 0dayfiles-upload-helper-ultra
+```
 
-# 3. Install dependencies
+### 3. Install dependencies
+```bash
 npm install
+```
 
-# 4. Copy config and set your announce URL + ImageBB key
+### 4. Copy config and set your announce URL + ImageBB key
+```bash
 cp config.toml.example config.toml
 # edit config.toml, or set via env vars:
 export ODFU_TORRENT_ANNOUNCE="https://0dayfiles.net/announce/<passkey>"
 export ODFU_IMAGEBB_API_KEY="<your-imgbb-key>"
+```
+`config.toml` is gitignored — always use `config.toml.example` as a template.
 
-# 5. Ensure mediainfo + ffmpeg are on PATH (needed for probing & screenshots)
-#    apt/pkg install may not be available without root; use static binaries
-#    in your home dir and add to PATH if needed.
+### 5. Ensure mediainfo + ffmpeg are on PATH (needed for probing & screenshots)
+`apt`/`pkg` install may not be available without root; use static binaries in your home dir and add to PATH if needed.
 
-# 6. Run headless
+### 6. Choose how to run
+
+#### Headless CLI
+```bash
 node main.js --headless --input "/path/to/Release.Name.2024.1080p.BluRay.x264-GRP"
 ```
+
+#### Web UI (remote management via browser)
+The web UI runs on your assigned Ultra.cc 5-digit port, bound to `127.0.0.1` only.
+Terminate HTTPS + auth with Nginx (see below).
+
+```bash
+# edit [web] -> port = <your-assigned-port>, e.g. 21345
+# optionally set watch_folder for torrent-client auto-load
+npm run web
+# or: node web.js
+```
+
+All `[web]` keys can be overridden via env vars, e.g. `ODFU_WEB_PORT=21345`.
+`web.js` refuses to start unless `web.port` is a valid assigned 5-digit port.
+
+### 7. (Recommended) Run as a userland systemd service
+
+```bash
+mkdir -p ~/.config/systemd/user
+cp odfu-seedbox.service ~/.config/systemd/user/odfu-upload-helper.service
+# edit ExecStart to point at `node web.js` (or `node main.js --headless ...`)
+systemctl --user daemon-reload
+systemctl --user enable --now odfu-upload-helper.service
+```
+
+### 8. Nginx proxy for the Web UI (Ultra.cc)
+
+Create `~/.apps/nginx/proxy.d/odfu-upload-helper.conf` (example; adjust the port):
+
+```nginx
+location /odfu/ {
+    proxy_pass http://127.0.0.1:21345/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    auth_basic "0dayfiles Upload Helper";
+    auth_basic_user_file /home/USER/.htpasswd;
+}
+```
+Then `~/.apps/nginx/nginx_proxy_reload`. Access via `https://<slot>.usbx.me/odfu/`.
 
 ## CLI usage
 
@@ -71,18 +122,7 @@ node main.js --help
 The app includes an Express web UI so you can manage releases from a browser
 instead of SSH. It runs on your assigned Ultra.cc 5-digit port, bound to
 `127.0.0.1` only; terminate HTTPS + auth with Nginx
-(see the Nginx notes below).
-
-### Start
-```bash
-# 1. Copy config and set your assigned 5-digit port
-cp config.toml.example config.toml
-# edit [web] -> port = <your-assigned-port>, e.g. 21345
-
-# 2. Start the web server
-npm run web
-# or: node web.js
-```
+(see step 8 in Install).
 
 ### Features
 - **File browser** — navigate the server filesystem (`[web] browse_root`, defaults to CWD) and select a release folder or `.torrent` to process.
