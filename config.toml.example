@@ -1,0 +1,129 @@
+# 0dayfiles upload helper — Ultra.cc seedbox edition (Node.js)
+# Headless CLI for preparing and uploading releases to 0dayfiles.net (UNIT3D).
+# Secrets are stored via environment variables or OS keychain; never hardcode them here.
+
+[general]
+# Where build artifacts (.torrent, .nfo, .release.json) are written.
+# Blank => "<release>-output/" beside the source folder.
+out_dir = ""
+# Where the tracker's official .torrent is downloaded for seeding.
+seeding_dir = ""
+# Auto-submit to 0dayfiles after a successful build (manual mode writes artifacts only).
+auto_upload = false
+# Build the 6x6 contact-sheet thumbnail during scan (uploaded to ImageBB).
+auto_thumbnail = true
+# Generate an .sfv (CRC32) alongside the torrent/NFO.
+generate_sfv = true
+# Path to the mediainfo CLI binary. Leave empty for auto-detection.
+mediainfo_cli_path = ""
+# Open output folder when finished (headless: no-op).
+open_folder_after = true
+# Include a technical specs block in the description.
+include_technical_in_description = false
+# Appended to every auto-generated description (supports BBCode).
+description_footer = ""
+language = "English"
+# NFO extension used when writing NFO files.
+nfo_extension = ".nfo"
+
+[torrent]
+# Your announce URL from the tracker's upload page (contains the passkey).
+# Masked in logs. Can also be set via ODFU_TORRENT_ANNOUNCE.
+announce = ""
+# Failover announce tiers (one per line).
+announce_tiers = []
+private = true
+source = null
+created_by = "0dayfiles-upload-helper-ultra/1.0"
+comment = null
+# "flat" or "nested".
+announce_list_mode = "flat"
+# Override piece length (0 = auto).
+piece_length = 0
+# Pad files target size (0 = disabled).
+pad_to = 0
+exclude_globs = [".pad/*"]
+exclude_dirs = [".pad"]
+follow_symlinks = false
+natural_sort = true
+
+[imagebb]
+# Image host: "auto", "imgbb", "catbox", "imgcdn", "hotimg", "imghosting", "freeimage".
+provider = "auto"
+# Your ImageBB API key (user's own key — never the tracker's).
+api_key = ""
+api_url = "https://api.imgbb.com/1/upload"
+# Catbox userhash (optional; anonymous uploads expire after 2 yrs inactivity).
+catbox_userhash = ""
+imgcdn_api_key = ""
+imgcdn_api_url = "https://imgcdn.dev/api/1/upload"
+hotimg_api_key = ""
+hotimg_api_url = "https://hotimg.com/api/1/upload"
+imghosting_api_key = ""
+imghosting_api_url = "https://api.imghosting.in/upload"
+freeimage_api_key = ""
+freeimage_api_url = "https://freeimage.host/api/1/upload"
+expiration = 0
+timeout = 60
+retries = 3
+
+[tracker]
+base_url = "https://0dayfiles.net"
+form_path = "/torrents/create"
+submit_path = "/api/torrents/upload"
+# "manual" (safe default) or "form" (real POST — publishes live).
+mode = "manual"
+# Your 0dayfiles.net API key (Settings -> API Key). Required for form mode.
+api_token = ""
+timeout = 45
+retries = 2
+verify_tls = true
+user_agent = "Mozilla/5.0 (0dayfiles-upload-helper-ultra)"
+
+# Canonical -> tracker field mapping. Read off the live form; do not guess.
+[tracker.field_map]
+title = "name"
+category_id = "category_id"
+description = "description"
+keywords = "keywords"
+mediainfo = "mediainfo"
+bdinfo = "bdinfo"
+season_number = "season_number"
+episode_number = "episode_number"
+anon = "anonymous"
+personal_release = "personal_release"
+tmdb_movie_id = "tmdb"
+tmdb_tv_id = "tmdb"
+tmdb = "tmdb"
+tvdb = "tvdb"
+igdb = "igdb"
+imdb = "imdb"
+# Boost-request fields (0dayfiles.net UNIT3D form, 10 asks per month).
+boost_ask = "boost_ask"
+boost_free = "boost[free]"
+boost_free_days = "boost[free_days]"
+boost_du_days = "boost[du_days]"
+boost_featured = "boost[featured]"
+boost_reason = "boost_reason"
+
+[synopsis]
+enabled = true
+# Providers to try, in order.
+providers = ["applebooks", "openlibrary", "hardcover", "googlebooks", "wikipedia", "tmdb"]
+tmdb_api_key = ""
+hardcover_api_key = ""
+# How closely the source title must match before a description is inserted.
+threshold = 0.86
+timeout = 12
+cache = true
+auto_fetch = false
+include_year = true
+
+[metadata]
+# Credentials for external metadata services (stored only — no lookup yet).
+tvdb_api_key = ""
+igdb_client_id = ""
+igdb_client_secret = ""
+imdb_api_key = ""
+discogs_token = ""
+lastfm_api_key = ""

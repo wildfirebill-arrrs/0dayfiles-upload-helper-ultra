@@ -1,0 +1,14 @@
+node_modules/
+package-lock.json
+.env
+config.toml
+*.log
+*.pid
+.state.json
+release-*/
+*-output/
+.DS_Store
+Thumbs.db
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

@@ -1,0 +1,32 @@
+{
+  "name": "0dayfiles-upload-helper-ultra",
+  "version": "1.0.0beta1",
+  "description": "Headless Node.js release-preparation helper for 0dayfiles.net (UNIT3D) private tracker uploads, built for seedboxes (Ultra.cc). Runs over SSH with no GUI.",
+  "main": "main.js",
+  "bin": {
+    "odfu-ultra": "main.js"
+  },
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "start": "node main.js",
+    "headless": "node main.js --headless",
+    "test": "node --test"
+  },
+  "keywords": [
+    "0dayfiles",
+    "unit3d",
+    "torrent",
+    "seedbox",
+    "private-tracker",
+    "nfo",
+    "mediainfo"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "toml": "^4.1.0"
+  },
+  "devDependencies": {}
+}

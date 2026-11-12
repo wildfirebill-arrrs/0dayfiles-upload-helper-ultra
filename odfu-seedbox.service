@@ -1,0 +1,14 @@
+[Unit]
+Description=0dayfiles upload helper (Ultra.cc seedbox edition)
+After=network-online.target
+
+[Service]
+Type=simple
+Restart=on-failure
+WorkingDirectory=%h/0dayfiles-upload-helper-ultra
+ExecStart=%h/.nvm/versions/node/v*/bin/node %h/0dayfiles-upload-helper-ultra/main.js --headless --input /path/to/releases --submit
+StandardOutput=file:%h/0dayfiles-upload-helper-ultra/logs/service.log
+StandardError=file:%h/0dayfiles-upload-helper-ultra/logs/service.log
+
+[Install]
+WantedBy=default.target
