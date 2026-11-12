@@ -86,10 +86,11 @@ systemctl --user enable --now odfu-upload-helper.service
 
 ### 8. Nginx proxy for the Web UI (Ultra.cc)
 
-Create `~/.apps/nginx/proxy.d/odfu-upload-helper.conf` (example; adjust the port):
+Create `~/.apps/nginx/proxy.d/odfu-upload-helper.conf` (example; adjust the port
+and username):
 
 ```nginx
-location /odfu/ {
+location /app/ {
     proxy_pass http://127.0.0.1:21345/;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
@@ -99,7 +100,8 @@ location /odfu/ {
     auth_basic_user_file /home/USER/.htpasswd;
 }
 ```
-Then `~/.apps/nginx/nginx_proxy_reload`. Access via `https://<slot>.usbx.me/odfu/`.
+Then `~/.apps/nginx/nginx_proxy_reload`. Access via
+`https://username.indigo.usbx.me/app/`.
 
 ## CLI usage
 
@@ -147,10 +149,11 @@ All `[web]` keys can be overridden via env vars, e.g. `ODFU_WEB_PORT=21345`.
 
 ### Nginx proxy (Ultra.cc)
 
-Create `~/.apps/nginx/proxy.d/odfu-upload-helper.conf` (example; adjust the port):
+Create `~/.apps/nginx/proxy.d/odfu-upload-helper.conf` (example; adjust the port
+and username):
 
 ```nginx
-location /odfu/ {
+location /app/ {
     proxy_pass http://127.0.0.1:21345/;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
@@ -160,7 +163,8 @@ location /odfu/ {
     auth_basic_user_file /home/USER/.htpasswd;
 }
 ```
-Then `~/.apps/nginx/nginx_proxy_reload`. Access via `https://<slot>.usbx.me/odfu/`.
+Then `~/.apps/nginx/nginx_proxy_reload`. Access via
+`https://username.indigo.usbx.me/app/`.
 
 ### Flags
 
