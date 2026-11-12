@@ -19,6 +19,8 @@ const SECRET_FIELDS = new Set([
   "metadata.imdb_api_key",
   "metadata.discogs_token",
   "metadata.lastfm_api_key",
+  "web.auth_username",
+  "web.auth_password",
 ]);
 
 const SECTIONS = ["general", "torrent", "imagebb", "tracker", "synopsis", "metadata", "web"];
@@ -184,6 +186,12 @@ function applyDefaults(cfg) {
   d("web", "max_concurrent_jobs", 1);
   d("web", "job_retention_minutes", 60);
   d("web", "browse_root", "");
+  d("web", "auth_enabled", true);
+  d("web", "auth_username", "");
+  d("web", "auth_password", "");
+  d("web", "rate_limit_max", 60);
+  d("web", "rate_limit_window_seconds", 60);
+  d("web", "ip_allowlist", ["127.0.0.1", "::1"]);
 
   // Coerce booleans from env strings.
   for (const s of SECTIONS) {
@@ -205,6 +213,14 @@ function applyDefaults(cfg) {
   if (typeof cfg.web.job_retention_minutes === "string") {
     const n = Number(cfg.web.job_retention_minutes);
     if (!Number.isNaN(n)) cfg.web.job_retention_minutes = n;
+  }
+  if (typeof cfg.web.rate_limit_max === "string") {
+    const n = Number(cfg.web.rate_limit_max);
+    if (!Number.isNaN(n)) cfg.web.rate_limit_max = n;
+  }
+  if (typeof cfg.web.rate_limit_window_seconds === "string") {
+    const n = Number(cfg.web.rate_limit_window_seconds);
+    if (!Number.isNaN(n)) cfg.web.rate_limit_window_seconds = n;
   }
 
   return cfg;

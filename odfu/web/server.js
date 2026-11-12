@@ -4,6 +4,7 @@ const express = require("express");
 const fs = require("fs");
 const fsp = require("fs/promises");
 const path = require("path");
+const crypto = require("crypto");
 
 const { load, configPath, isSecret, masked, SECTIONS } = require("../core/config");
 const { Release, StepState, slug } = require("../core/pipeline");
@@ -20,10 +21,11 @@ const { createTorrent, crossSeed } = require("../core/torrent");
 const { lookup } = require("../core/synopsis");
 const tracker = require("../core/tracker");
 const watch = require("../core/watch");
+
 // Use the project's own uuid4 (avoid adding another dependency).
 function uuid4() {
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = (require("crypto").randomBytes(1)[0] % 16) | 0;
+    const r = (crypto.randomBytes(1)[0] % 16) | 0;
     const v = c === "x" ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });
@@ -72,11 +74,20 @@ function jobLog(job, message) {
  * Create the Express application. Config is passed in so the server can be
  * tested without binding a port.
  *
+ * Security layers (defense in depth; Nginx auth_basic is primary access control):
+ *  1. trust proxy (read X-Forwarded-For for real client IP behind Nginx)
+ *  2. IP allowlist (default: 127.0.0.1 / ::1 only)
+ *  3. Rate limiting per IP
+ *  4. HTTP Basic Auth (configurable via [web] auth_username / auth_password)
+ *  5. CSRF tokens for state-changing methods (POST/PUT/DELETE)
+ *  6. Security headers (CSP, X-Frame-Options, etc.)
+ *
  * @param {Object} cfg - loaded config object
  * @returns {import("express").Express}
  */
 function createServer(cfg) {
   const app = express();
+  app.set("trust proxy", true);
   app.use(express.json({ limit: "1mb" }));
 
   const webCfg = cfg.web || {};
@@ -84,18 +95,151 @@ function createServer(cfg) {
   const maxJobs = Number(webCfg.max_concurrent_jobs || 1);
   const retentionMs = Number(webCfg.job_retention_minutes || 60) * 60 * 1000;
 
-  // Concurrency limiter.
+  // --- Security: IP allowlist ---------------------------------------------
+  const ipAllowlist = Array.isArray(webCfg.ip_allowlist)
+    ? webCfg.ip_allowlist.map(String)
+    : [];
+
+  function ipAllowlistMiddleware(_req, res, next) {
+    // If no allowlist configured, allow all.
+    if (ipAllowlist.length === 0) return next();
+    const ip = _req.ip || _req.connection.remoteAddress || "unknown";
+    if (ipAllowlist.includes(ip)) return next();
+    res.status(403).json({ ok: false, error: "IP not allowed" });
+  }
+
+  // --- Security: rate limiting --------------------------------------------
+  const rateLimitMap = new Map(); // ip -> { count, resetTime }
+  const RATE_WINDOW_MS = Number(webCfg.rate_limit_window_seconds || 60) * 1000;
+  const RATE_MAX = Number(webCfg.rate_limit_max || 60);
+
+  function rateLimitMiddleware(req, res, next) {
+    const ip = req.ip || req.connection.remoteAddress || "unknown";
+    const now = Date.now();
+    let entry = rateLimitMap.get(ip);
+    if (!entry || now > entry.resetTime) {
+      entry = { count: 1, resetTime: now + RATE_WINDOW_MS };
+      rateLimitMap.set(ip, entry);
+      return next();
+    }
+    entry.count++;
+    if (entry.count > RATE_MAX) {
+      res.set("Retry-After", String(Math.ceil((entry.resetTime - now) / 1000)));
+      return res.status(429).json({ ok: false, error: "rate limit exceeded" });
+    }
+    next();
+  }
+
+  // --- Security: security headers -----------------------------------------
+  function securityHeadersMiddleware(_req, res, next) {
+    res.set("X-Content-Type-Options", "nosniff");
+    res.set("X-Frame-Options", "DENY");
+    res.set(
+      "Content-Security-Policy",
+      "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:;"
+    );
+    res.set("Referrer-Policy", "no-referrer");
+    res.set("X-XSS-Protection", "1; mode=block");
+    next();
+  }
+
+  // --- Security: HTTP Basic Auth ------------------------------------------
+  const authEnabled = webCfg.auth_enabled !== false;
+  const authUsername = String(webCfg.auth_username || "");
+  const authPassword = String(webCfg.auth_password || "");
+  const authExpectedHash =
+    authUsername && authPassword
+      ? crypto.createHash("sha256").update(`${authUsername}:${authPassword}`).digest()
+      : null;
+
+  function authMiddleware(req, res, next) {
+    if (!authEnabled || !authExpectedHash) {
+      // Auth not configured — allow but mark response so Nginx/auth_basic is
+      // clearly the primary control.
+      res.set("X-Auth-Required", "false");
+      return next();
+    }
+
+    const auth = req.headers.authorization;
+    if (!auth || !auth.startsWith("Basic ")) {
+      res.set("WWW-Authenticate", 'Basic realm="0dayfiles Upload Helper"');
+      res.set("X-Auth-Required", "true");
+      return res.status(401).json({ ok: false, error: "authentication required" });
+    }
+
+    const credentials = Buffer.from(auth.slice(6), "base64").toString("utf-8");
+    const providedHash = crypto.createHash("sha256").update(credentials).digest();
+
+    if (
+      providedHash.length !== authExpectedHash.length ||
+      !crypto.timingSafeEqual(providedHash, authExpectedHash)
+    ) {
+      res.set("WWW-Authenticate", 'Basic realm="0dayfiles Upload Helper"');
+      res.set("X-Auth-Required", "true");
+      return res.status(401).json({ ok: false, error: "invalid credentials" });
+    }
+
+    res.set("X-Auth-Required", "true");
+    next();
+  }
+
+  // --- Security: CSRF tokens for state-changing methods -------------------
+  const csrfTokens = new Map(); // token -> { expiry, ip }
+  const CSRF_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
+  function generateCsrfToken() {
+    return crypto.randomBytes(32).toString("hex");
+  }
+
+  function csrfMiddleware(req, res, next) {
+    const unsafeMethods = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+    if (!unsafeMethods.has(req.method)) {
+      // Safe method: issue a fresh CSRF token for the client to use next time.
+      const token = generateCsrfToken();
+      csrfTokens.set(token, { expiry: Date.now() + CSRF_TTL_MS, ip: req.ip });
+      res.set("X-CSRF-Token", token);
+      return next();
+    }
+
+    // State-changing method: require a valid, unused CSRF token.
+    const token = req.headers["x-csrf-token"] || (req.body && req.body._csrf);
+    if (!token) {
+      return res.status(403).json({ ok: false, error: "CSRF token required" });
+    }
+    const entry = csrfTokens.get(token);
+    if (!entry) {
+      return res.status(403).json({ ok: false, error: "CSRF token invalid" });
+    }
+    if (Date.now() > entry.expiry) {
+      csrfTokens.delete(token);
+      return res.status(403).json({ ok: false, error: "CSRF token expired" });
+    }
+    // Bind token to the IP that was issued it (defense against token theft).
+    if (entry.ip !== (req.ip || req.connection.remoteAddress || "unknown")) {
+      csrfTokens.delete(token);
+      return res.status(403).json({ ok: false, error: "CSRF token IP mismatch" });
+    }
+    // Single-use token.
+    csrfTokens.delete(token);
+    next();
+  }
+
+  // Apply security middleware to all routes (order matters).
+  app.use(ipAllowlistMiddleware);
+  app.use(rateLimitMiddleware);
+  app.use(securityHeadersMiddleware);
+  app.use(authMiddleware);
+  app.use(csrfMiddleware);
+
+  // --- Concurrency limiter ------------------------------------------------
   let running = 0;
   const queue = [];
 
   function enqueue(job) {
     jobs.set(job.id, job);
     queue.push(job);
-    // Kick off the queue processor without blocking the HTTP response.
-    // drainQueue is re-entrant-safe: it only runs while `running < maxJobs`.
     drainQueue().catch((err) => {
-      // Swallow unexpected queue errors so they don't crash the process.
-      // Individual jobs already capture their own errors in runJob.
       console.error("[odfu-web] queue error:", err.message);
     });
     return job;
@@ -150,8 +294,8 @@ function createServer(cfg) {
   });
 
   // --- API: file browser ---------------------------------------------------
-  app.get("/api/browse", (req, res) => {
-    const rawPath = String(req.query.path || "").trim();
+  app.get("/api/browse", (_req, res) => {
+    const rawPath = String(_req.query.path || "").trim();
     const rootAbs = resolveSafeRoot();
 
     let targetAbs;
@@ -452,7 +596,7 @@ function createServer(cfg) {
       } else if (job.type === "cross-seed") {
         await runCrossSeed(job);
       } else if (job.type === "submit") {
-        await runSubmitJob(job);
+        throw new Error("submit jobs are handled via /api/submit endpoint");
       }
       job.status = "done";
       job.progress = 100;
@@ -466,8 +610,8 @@ function createServer(cfg) {
   }
 
   // --- API: enqueue build --------------------------------------------------
-  app.post("/api/build", (req, res) => {
-    const { sourceDir, watch, submit } = req.body || {};
+  app.post("/api/build", (_req, res) => {
+    const { sourceDir, watch, submit } = _req.body || {};
     if (!sourceDir || typeof sourceDir !== "string") {
       return res.status(400).json({ ok: false, error: "sourceDir is required" });
     }
@@ -482,8 +626,8 @@ function createServer(cfg) {
   });
 
   // --- API: enqueue cross-seed ---------------------------------------------
-  app.post("/api/cross-seed", (req, res) => {
-    const { torrentPath, watch } = req.body || {};
+  app.post("/api/cross-seed", (_req, res) => {
+    const { torrentPath, watch } = _req.body || {};
     if (!torrentPath || typeof torrentPath !== "string") {
       return res.status(400).json({ ok: false, error: "torrentPath is required" });
     }
@@ -511,8 +655,8 @@ function createServer(cfg) {
   });
 
   // --- API: single job -----------------------------------------------------
-  app.get("/api/jobs/:jobId", (req, res) => {
-    const job = jobs.get(req.params.jobId);
+  app.get("/api/jobs/:jobId", (_req, res) => {
+    const job = jobs.get(_req.params.jobId);
     if (!job) return res.status(404).json({ ok: false, error: "job not found" });
     res.json({
       ok: true,
@@ -525,25 +669,15 @@ function createServer(cfg) {
     });
   });
 
-  // --- helper: submit job --------------------------------------------------
-  async function runSubmitJob(job) {
-    // job.sourceDir holds a release id or path; we look up the release json.
-    // For submit via web we expect the client to POST the release toDict as body? 
-    // Simpler: the client calls /api/submit directly with release data. This job type is reserved.
-    throw new Error("submit jobs are handled via /api/submit endpoint");
-  }
-
   // --- API: submit release -------------------------------------------------
-  app.post("/api/submit", async (req, res) => {
-    const { release, dryRun } = req.body || {};
+  app.post("/api/submit", async (_req, res) => {
+    const { release, dryRun } = _req.body || {};
     if (!release || !release.title) {
       return res.status(400).json({ ok: false, error: "release data is required" });
     }
 
-    // Re-hydrate a Release-like object from the dict for validation/submit.
     const rel = new Release({ sourceDir: release.sourceDir || "", outputDir: release.outputDir || null });
     Object.assign(rel, release);
-    // ensure state/getters work
     rel.state = StepState.DONE;
 
     const result = await tracker.submit(rel, cfg, { dryRun: dryRun !== false, openBrowser: false });
@@ -564,6 +698,15 @@ function createServer(cfg) {
       console.warn("[odfu-web] warning: web.port is not set to a valid assigned 5-digit port.");
       console.warn("[odfu-web]         set web.port in config.toml (or ODFU_WEB_PORT) before exposing the UI.");
       console.warn("[odfu-web]         binding to 127.0.0.1 only; Nginx should terminate HTTPS/auth.");
+    }
+
+    // Auth guard: if auth is enabled but credentials are missing, refuse to start.
+    if (webCfg.auth_enabled !== false && (!authUsername || !authPassword)) {
+      const msg =
+        "[odfu-web] error: web.auth_enabled is true but auth_username/auth_password are not set.\n" +
+        "[odfu-web]         set them in config.toml (or ODFU_WEB_AUTH_USERNAME / ODFU_WEB_AUTH_PASSWORD).\n" +
+        "[odfu-web]         the web UI must not be open without authentication.";
+      throw new Error(msg);
     }
   };
 

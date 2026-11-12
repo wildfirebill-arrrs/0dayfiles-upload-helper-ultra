@@ -19,6 +19,10 @@ if (!port || port < 10000 || port > 65535) {
 }
 
 const app = createServer(cfg);
+
+// Security guard: validates port + auth credentials before binding.
+app._odfuPortWarning();
+
 const server = app.listen(port, bind, () => {
   const actual = server.address().port;
   console.log(`[odfu-web] listening on ${bind}:${actual}`);

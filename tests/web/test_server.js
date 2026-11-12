@@ -46,7 +46,32 @@ async function fetchJson(url, opts = {}) {
   } catch (_) {
     json = { raw: text };
   }
-  return { status: res.status, json };
+  return { status: res.status, headers: res.headers, json };
+}
+
+async function getCsrfToken() {
+  const { headers } = await fetchJson(baseUrl + "/api/config");
+  return headers.get("x-csrf-token");
+}
+
+function postJson(url, body) {
+  return fetchJson(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+async function postJsonWithCsrf(url, body) {
+  const token = await getCsrfToken();
+  return fetchJson(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRF-Token": token,
+    },
+    body: JSON.stringify(body),
+  });
 }
 
 test("GET /api/config returns masked public config", async () => {
@@ -109,13 +134,10 @@ test("GET /api/browse lists a directory and blocks traversal", async () => {
 
 test("POST /api/build rejects missing sourceDir with 400", async () => {
   const cfg = load();
+  cfg.web.browse_root = TMP;
   await startApp(cfg);
   try {
-    const { status, json } = await fetchJson(baseUrl + "/api/build", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-    });
+    const { status, json } = await postJsonWithCsrf(baseUrl + "/api/build", {});
     assert.strictEqual(status, 400);
     assert.strictEqual(json.ok, false);
   } finally {
@@ -129,10 +151,8 @@ test("POST /api/build enqueues a job and returns a jobId", async () => {
   await startApp(cfg);
   try {
     const fake = path.join(TMP, "does-not-exist");
-    const { status, json } = await fetchJson(baseUrl + "/api/build", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sourceDir: fake }),
+    const { status, json } = await postJsonWithCsrf(baseUrl + "/api/build", {
+      sourceDir: fake,
     });
     assert.strictEqual(status, 200);
     assert.strictEqual(json.ok, true);
@@ -149,10 +169,8 @@ test("enqueued job appears in GET /api/jobs", async () => {
   await startApp(cfg);
   try {
     const fake = path.join(TMP, "also-missing");
-    const enq = await fetchJson(baseUrl + "/api/build", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sourceDir: fake }),
+    const enq = await postJsonWithCsrf(baseUrl + "/api/build", {
+      sourceDir: fake,
     });
     assert.strictEqual(enq.status, 200);
     const jobId = enq.json.jobId;
@@ -178,10 +196,8 @@ test("POST /api/cross-seed enqueues a job", async () => {
   try {
     const fakeTorrent = path.join(TMP, "fake.torrent");
     await fsp.writeFile(fakeTorrent, Buffer.alloc(10));
-    const { status, json } = await fetchJson(baseUrl + "/api/cross-seed", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ torrentPath: fakeTorrent }),
+    const { status, json } = await postJsonWithCsrf(baseUrl + "/api/cross-seed", {
+      torrentPath: fakeTorrent,
     });
     assert.strictEqual(status, 200);
     assert.strictEqual(json.ok, true);

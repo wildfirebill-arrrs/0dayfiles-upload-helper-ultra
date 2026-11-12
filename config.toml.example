@@ -142,3 +142,16 @@ max_concurrent_jobs = 1
 job_retention_minutes = 60
 # Root path the file browser may traverse. Blank => CWD (no traversal guard).
 browse_root = ""
+# --- Security (defense in depth; Nginx auth_basic is primary access control) ---
+# Require HTTP Basic Auth on all web UI routes.
+auth_enabled = true
+# Basic Auth username (can also be set via ODFU_WEB_AUTH_USERNAME).
+auth_username = ""
+# Basic Auth password (can also be set via ODFU_WEB_AUTH_PASSWORD).
+auth_password = ""
+# Rate limit: max requests per IP per window.
+rate_limit_max = 60
+rate_limit_window_seconds = 60
+# Allowed client IPs (exact match, no CIDR). Empty = allow all.
+# Nginx connects from 127.0.0.1, so default to localhost-only.
+ip_allowlist = ["127.0.0.1", "::1"]
