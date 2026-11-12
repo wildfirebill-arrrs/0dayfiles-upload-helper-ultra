@@ -54,16 +54,39 @@ function basicAuthHeader(username, password) {
 }
 
 // ---- Security: auth_required when credentials configured ----
-test("web.js auth guard: refuses to start without credentials when auth_enabled", () => {
+test("web.js auth guard: auto-generates password for in-app auth when no credentials", () => {
   const cfg = load();
   cfg.web.auth_enabled = true;
   cfg.web.auth_username = "";
   cfg.web.auth_password = "";
   cfg.web.browse_root = TMP;
+  // Should NOT throw — in-app auth auto-generates a password.
+  const app = createServer(cfg);
+  assert.doesNotThrow(() => app._odfuPortWarning());
+});
+
+test("web.js auth guard: throws when only username is set", () => {
+  const cfg = load();
+  cfg.web.auth_enabled = true;
+  cfg.web.auth_username = "odfu";
+  cfg.web.auth_password = "";
+  cfg.web.browse_root = TMP;
   assert.throws(() => {
     const app = createServer(cfg);
     app._odfuPortWarning();
-  }, /auth_username\/auth_password are not set/);
+  }, /auth_password is missing/);
+});
+
+test("web.js auth guard: throws when only password is set", () => {
+  const cfg = load();
+  cfg.web.auth_enabled = true;
+  cfg.web.auth_username = "";
+  cfg.web.auth_password = "s3cr3t";
+  cfg.web.browse_root = TMP;
+  assert.throws(() => {
+    const app = createServer(cfg);
+    app._odfuPortWarning();
+  }, /auth_username is missing/);
 });
 
 test("security headers present on responses", async () => {

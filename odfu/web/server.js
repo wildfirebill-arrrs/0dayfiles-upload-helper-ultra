@@ -21,6 +21,7 @@ const { createTorrent, crossSeed } = require("../core/torrent");
 const { lookup } = require("../core/synopsis");
 const tracker = require("../core/tracker");
 const watch = require("../core/watch");
+const auth = require("../core/auth");
 
 // Use the project's own uuid4 (avoid adding another dependency).
 function uuid4() {
@@ -85,6 +86,15 @@ function jobLog(job, message) {
  * @param {Object} cfg - loaded config object
  * @returns {import("express").Express}
  */
+function escapeHtml(str) {
+  return String(str || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function createServer(cfg) {
   const app = express();
   app.set("trust proxy", true);
@@ -143,7 +153,7 @@ function createServer(cfg) {
     next();
   }
 
-  // --- Security: HTTP Basic Auth ------------------------------------------
+  // --- Security: HTTP Basic Auth (Nginx-style) -----------------------------
   const authEnabled = webCfg.auth_enabled !== false;
   const authUsername = String(webCfg.auth_username || "");
   const authPassword = String(webCfg.auth_password || "");
@@ -152,22 +162,56 @@ function createServer(cfg) {
       ? crypto.createHash("sha256").update(`${authUsername}:${authPassword}`).digest()
       : null;
 
+  // In-app auth: when auth_enabled is true but no Basic Auth credentials are
+  // set, auto-generate a password and use cookie-session auth (beats-rename style).
+  const inappAuth = authEnabled && !authUsername && !authPassword;
+  const inappCreds = inappAuth ? auth.loadAuth(cfg) : null;
+  const forceSecure =
+    webCfg.force_secure === true ||
+    process.env.FORCE_SECURE === "1" ||
+    process.env.FORCE_SECURE === "true";
+
   function authMiddleware(req, res, next) {
-    if (!authEnabled || !authExpectedHash) {
-      // Auth not configured — allow but mark response so Nginx/auth_basic is
-      // clearly the primary control.
+    if (!authEnabled) {
       res.set("X-Auth-Required", "false");
       return next();
     }
 
-    const auth = req.headers.authorization;
-    if (!auth || !auth.startsWith("Basic ")) {
+    // In-app auth: check session cookie.
+    if (inappAuth) {
+      const cookies = auth.parseCookies(req.headers.cookie);
+      const session = auth.verifySessionToken(cookies.odfu_session, inappCreds.secret);
+      if (session) {
+        res.set("X-Auth-Required", "true");
+        req.odfuUser = session;
+        return next();
+      }
+      // Allow login page and static assets through.
+      if (req.path === "/login" || req.path.startsWith("/public/")) {
+        return next();
+      }
+      // API routes get 401; page routes redirect to login.
+      if (req.path.startsWith("/api/")) {
+        res.set("X-Auth-Required", "true");
+        return res.status(401).json({ ok: false, error: "authentication required" });
+      }
+      return res.redirect("/login");
+    }
+
+    // Nginx-style Basic Auth (when credentials are configured).
+    if (!authExpectedHash) {
+      res.set("X-Auth-Required", "false");
+      return next();
+    }
+
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Basic ")) {
       res.set("WWW-Authenticate", 'Basic realm="0dayfiles Upload Helper"');
       res.set("X-Auth-Required", "true");
       return res.status(401).json({ ok: false, error: "authentication required" });
     }
 
-    const credentials = Buffer.from(auth.slice(6), "base64").toString("utf-8");
+    const credentials = Buffer.from(authHeader.slice(6), "base64").toString("utf-8");
     const providedHash = crypto.createHash("sha256").update(credentials).digest();
 
     if (
@@ -193,6 +237,11 @@ function createServer(cfg) {
 
   function csrfMiddleware(req, res, next) {
     const unsafeMethods = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+    // Exempt login/logout from CSRF (they have their own rate limiting).
+    if (req.path === "/login" || req.path === "/logout") {
+      return next();
+    }
 
     if (!unsafeMethods.has(req.method)) {
       // Safe method: issue a fresh CSRF token for the client to use next time.
@@ -684,8 +733,97 @@ function createServer(cfg) {
     res.json({ ok: true, ...result });
   });
 
+  // --- in-app auth: login / logout ----------------------------------------
+  if (inappAuth) {
+    const loginAttempts = new Map();
+    const LOGIN_MAX = 8;
+    const LOGIN_WINDOW_MS = 60 * 1000;
+
+    app.get("/login", (_req, res) => {
+      res.type("html").send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Login — 0dayfiles Upload Helper</title>
+<style>
+  body{font-family:system-ui,sans-serif;background:#0f1117;color:#e6e6e6;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}
+  .card{background:#1a1d27;border:1px solid #2a2e3a;border-radius:12px;padding:2rem;width:320px}
+  h1{font-size:1.2rem;margin:0 0 1rem}
+  label{display:block;margin-bottom:.5rem;font-size:.9rem;color:#9aa0a6}
+  input{width:100%;padding:.6rem .8rem;border:1px solid #2a2e3a;border-radius:8px;background:#0f1117;color:#e6e6e6;font-size:1rem;margin-bottom:1rem;box-sizing:border-box}
+  button{width:100%;padding:.7rem;border:none;border-radius:8px;background:#4f8cff;color:#fff;font-size:1rem;cursor:pointer}
+  button:hover{background:#3a7bef}
+  .err{color:#ff6b6b;font-size:.85rem;margin-bottom:1rem}
+  .hint{font-size:.8rem;color:#9aa0a6;margin-top:1rem}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>0dayfiles Upload Helper</h1>
+  <div id="err" class="err"></div>
+  <form id="loginForm">
+    <label>Username</label>
+    <input type="text" name="username" value="${escapeHtml(inappCreds.username)}" required>
+    <label>Password</label>
+    <input type="password" name="password" required autofocus>
+    <button type="submit">Sign in</button>
+  </form>
+  <div class="hint">Password was auto-generated on first run and saved to <code>.auth</code>. Check the console or <code>cat .auth</code>.</div>
+</div>
+<script>
+document.getElementById('loginForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const res = await fetch('/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: form.username.value, password: form.password.value }),
+  });
+  const data = await res.json();
+  if (res.ok) { window.location.href = '/'; }
+  else { document.getElementById('err').textContent = data.error || 'Login failed'; }
+});
+</script>
+</body>
+</html>`);
+    });
+
+    app.post("/login", (req, res) => {
+      const ip = req.ip || "unknown";
+      const now = Date.now();
+      const attempts = loginAttempts.get(ip) || [];
+      const recent = attempts.filter((t) => now - t < LOGIN_WINDOW_MS);
+      if (recent.length >= LOGIN_MAX) {
+        return res.status(429).json({ ok: false, error: "too many login attempts; try again later" });
+      }
+      recent.push(now);
+      loginAttempts.set(ip, recent);
+
+      const { username, password } = req.body || {};
+      if (username !== inappCreds.username || password !== inappCreds.password) {
+        return res.status(401).json({ ok: false, error: "invalid credentials" });
+      }
+      // Clear attempts on success.
+      loginAttempts.delete(ip);
+      const token = auth.createSessionToken(inappCreds.username, inappCreds.secret);
+      res.set("Set-Cookie", auth.sessionCookie(token, inappCreds.secret, forceSecure));
+      res.json({ ok: true });
+    });
+
+    app.post("/logout", (_req, res) => {
+      res.set("Set-Cookie", "odfu_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0");
+      res.json({ ok: true });
+    });
+  }
+
   // --- root: serve frontend ------------------------------------------------
   app.get("/", (_req, res) => {
+    if (inappAuth) {
+      const cookies = auth.parseCookies(_req.headers.cookie);
+      const session = auth.verifySessionToken(cookies.odfu_session, inappCreds ? inappCreds.secret : "");
+      if (!session) return res.redirect("/login");
+    }
     res.sendFile(path.join(__dirname, "public", "index.html"));
   });
 
@@ -700,14 +838,21 @@ function createServer(cfg) {
       console.warn("[odfu-web]         binding to 127.0.0.1 only; Nginx should terminate HTTPS/auth.");
     }
 
-    // Auth guard: if auth is enabled but credentials are missing, refuse to start.
-    if (webCfg.auth_enabled !== false && (!authUsername || !authPassword)) {
+    // Auth guard: if Basic Auth username is set, password must also be set.
+    if (webCfg.auth_enabled !== false && authUsername && !authPassword) {
       const msg =
-        "[odfu-web] error: web.auth_enabled is true but auth_username/auth_password are not set.\n" +
-        "[odfu-web]         set them in config.toml (or ODFU_WEB_AUTH_USERNAME / ODFU_WEB_AUTH_PASSWORD).\n" +
-        "[odfu-web]         the web UI must not be open without authentication.";
+        "[odfu-web] error: web.auth_username is set but auth_password is missing.\n" +
+        "[odfu-web]         set auth_password in config.toml (or ODFU_WEB_AUTH_PASSWORD).";
       throw new Error(msg);
     }
+    if (webCfg.auth_enabled !== false && !authUsername && authPassword) {
+      const msg =
+        "[odfu-web] error: web.auth_password is set but auth_username is missing.\n" +
+        "[odfu-web]         set auth_username in config.toml (or ODFU_WEB_AUTH_USERNAME).";
+      throw new Error(msg);
+    }
+    // In-app auth: when auth is enabled but no Basic Auth creds, auto-generate
+    // a password (beats-rename style) — no refusal.
   };
 
   return app;

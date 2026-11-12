@@ -76,6 +76,7 @@ async function postJsonWithCsrf(url, body) {
 
 test("GET /api/config returns masked public config", async () => {
   const cfg = load();
+  cfg.web.auth_enabled = false;
   await startApp(cfg);
   try {
     const { status, json } = await fetchJson(baseUrl + "/api/config");
@@ -103,6 +104,7 @@ test("GET /api/browse lists a directory and blocks traversal", async () => {
   await fsp.writeFile(path.join(sub, "notes.txt"), Buffer.alloc(50));
 
   const cfg = load();
+  cfg.web.auth_enabled = false;
   cfg.web.browse_root = root;
   await startApp(cfg);
   try {
@@ -134,6 +136,7 @@ test("GET /api/browse lists a directory and blocks traversal", async () => {
 
 test("POST /api/build rejects missing sourceDir with 400", async () => {
   const cfg = load();
+  cfg.web.auth_enabled = false;
   cfg.web.browse_root = TMP;
   await startApp(cfg);
   try {
@@ -147,6 +150,7 @@ test("POST /api/build rejects missing sourceDir with 400", async () => {
 
 test("POST /api/build enqueues a job and returns a jobId", async () => {
   const cfg = load();
+  cfg.web.auth_enabled = false;
   cfg.web.browse_root = TMP;
   await startApp(cfg);
   try {
@@ -165,6 +169,7 @@ test("POST /api/build enqueues a job and returns a jobId", async () => {
 
 test("enqueued job appears in GET /api/jobs", async () => {
   const cfg = load();
+  cfg.web.auth_enabled = false;
   cfg.web.browse_root = TMP;
   await startApp(cfg);
   try {
@@ -191,6 +196,7 @@ test("enqueued job appears in GET /api/jobs", async () => {
 
 test("POST /api/cross-seed enqueues a job", async () => {
   const cfg = load();
+  cfg.web.auth_enabled = false;
   cfg.web.browse_root = TMP;
   await startApp(cfg);
   try {

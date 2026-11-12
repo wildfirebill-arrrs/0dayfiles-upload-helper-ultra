@@ -62,7 +62,23 @@ node main.js --headless --input "/path/to/Release.Name.2024.1080p.BluRay.x264-GR
 
 #### Web UI (remote management via browser)
 The web UI runs on your assigned Ultra.cc 5-digit port, bound to `127.0.0.1` only.
-Terminate HTTPS + auth with Nginx (see below).
+No config file or Nginx setup required — just set `PORT` and `ROOT_DIR`:
+
+```bash
+# Quick start (beats-rename style)
+PORT=21345 ROOT_DIR=$HOME node web.js
+# or use the helper script:
+PORT=21345 ROOT_DIR=$HOME ./start.sh
+```
+
+On first run with no password configured, a random password is auto-generated,
+printed to the console, and saved to `.auth` (mode 0600). Log in at
+`https://username.indigo.usbx.me/app/login` with username `admin` and that
+password.
+
+All settings can also be set via `config.toml` (copy from `config.toml.example`)
+or env vars (`ODFU_WEB_*`, `PORT`, `ROOT_DIR`, `AUTH_USER`, `AUTH_PASS`,
+`AUTH_SECRET`, `FORCE_SECURE`).
 
 ```bash
 # edit [web] -> port = <your-assigned-port>, e.g. 21345
@@ -149,8 +165,13 @@ All `[web]` keys can be overridden via env vars, e.g. `ODFU_WEB_PORT=21345`.
 
 ### Security (defense in depth)
 
-The web UI layers multiple security controls — Nginx auth_basic is the
-primary access control; the app adds its own guards:
+The web UI has **built-in authentication** (no Nginx required). On first run
+without a password configured, a random password is auto-generated and saved
+to `.auth`. You can also set `AUTH_USER` / `AUTH_PASS` env vars or configure
+them in `config.toml`.
+
+Nginx auth_basic is still supported as an additional layer for defense in
+depth. The app adds its own guards:
 
 | Layer | Config key | Default |
 |-------|-----------|---------|
@@ -164,9 +185,11 @@ Secrets (`auth_username`, `auth_password`) are stored as `SECRET_FIELDS` and
 never exposed via `/api/config`. `web.js` refuses to bind unless `auth_enabled`
 is false or both credentials are set.
 
-### Nginx proxy (Ultra.cc)
+### Nginx proxy (Ultra.cc) — optional
 
-Create `~/.apps/nginx/proxy.d/odfu-upload-helper.conf` (example; adjust the port
+Nginx is optional since the app has built-in auth. Use it for HTTPS
+termination and an extra auth layer. Create
+`~/.apps/nginx/proxy.d/odfu-upload-helper.conf` (example; adjust the port
 and username):
 
 ```nginx

@@ -10,12 +10,16 @@ const webCfg = cfg.web || {};
 const port = Number(webCfg.port) || 0;
 const bind = String(webCfg.bind || "127.0.0.1");
 
-// Validate port: Ultra.cc assigns 5-digit ports; refuse default ports.
-if (!port || port < 10000 || port > 65535) {
-  console.error("[odfu-web] error: web.port is not set to a valid assigned 5-digit port.");
-  console.error("[odfu-web]         edit config.toml (or set ODFU_WEB_PORT) to your assigned port, e.g. 21345.");
-  console.error("[odfu-web]         binding to 127.0.0.1 only; Nginx should terminate HTTPS/auth.");
+// Validate port: accept any valid port (beats-rename style: PORT=3000 node web.js).
+// Ultra.cc users should set an assigned 5-digit port; warn (don't refuse) otherwise.
+if (!port || port < 1 || port > 65535) {
+  console.error("[odfu-web] error: web.port is not set.");
+  console.error("[odfu-web]         edit config.toml [web] port, set ODFU_WEB_PORT, or use PORT= env var.");
+  console.error("[odfu-web]         example: PORT=21345 node web.js");
   process.exit(1);
+}
+if (port < 1024) {
+  console.warn("[odfu-web] warning: port < 1024 may require elevated privileges.");
 }
 
 const app = createServer(cfg);

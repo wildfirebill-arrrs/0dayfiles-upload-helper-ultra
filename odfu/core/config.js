@@ -75,6 +75,32 @@ function load(rawPath) {
     cfg[section][key] = envVal;
   }
 
+  // beats-rename-style env var overrides (PORT, ROOT_DIR, AUTH_*, FORCE_SECURE).
+  if (process.env.PORT) {
+    cfg.web = cfg.web || {};
+    cfg.web.port = Number(process.env.PORT) || cfg.web.port;
+  }
+  if (process.env.ROOT_DIR) {
+    cfg.web = cfg.web || {};
+    cfg.web.browse_root = process.env.ROOT_DIR;
+  }
+  if (process.env.AUTH_USER) {
+    cfg.web = cfg.web || {};
+    cfg.web.auth_username = process.env.AUTH_USER;
+  }
+  if (process.env.AUTH_PASS) {
+    cfg.web = cfg.web || {};
+    cfg.web.auth_password = process.env.AUTH_PASS;
+  }
+  if (process.env.AUTH_SECRET) {
+    cfg.web = cfg.web || {};
+    cfg.web.auth_secret = process.env.AUTH_SECRET;
+  }
+  if (process.env.FORCE_SECURE) {
+    cfg.web = cfg.web || {};
+    cfg.web.force_secure = process.env.FORCE_SECURE === "1" || process.env.FORCE_SECURE === "true";
+  }
+
   // Apply defaults.
   applyDefaults(cfg);
   return cfg;
@@ -192,6 +218,7 @@ function applyDefaults(cfg) {
   d("web", "rate_limit_max", 60);
   d("web", "rate_limit_window_seconds", 60);
   d("web", "ip_allowlist", ["127.0.0.1", "::1"]);
+  d("web", "auth_secret", "");
 
   // Coerce booleans from env strings.
   for (const s of SECTIONS) {
