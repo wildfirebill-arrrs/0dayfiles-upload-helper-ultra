@@ -33,9 +33,9 @@ announce = ""
 # Failover announce tiers (one per line).
 announce_tiers = []
 private = true
-source = null
+source = ""
 created_by = "0dayfiles-upload-helper-ultra/1.0"
-comment = null
+comment = ""
 # "flat" or "nested".
 announce_list_mode = "flat"
 # Override piece length (0 = auto).
