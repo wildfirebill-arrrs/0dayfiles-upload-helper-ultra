@@ -147,6 +147,23 @@ instead of SSH. It runs on your assigned Ultra.cc 5-digit port, bound to
 
 All `[web]` keys can be overridden via env vars, e.g. `ODFU_WEB_PORT=21345`.
 
+### Security (defense in depth)
+
+The web UI layers multiple security controls — Nginx auth_basic is the
+primary access control; the app adds its own guards:
+
+| Layer | Config key | Default |
+|-------|-----------|---------|
+| IP allowlist | `ip_allowlist` | `["127.0.0.1", "::1"]` |
+| HTTP Basic Auth | `auth_enabled` / `auth_username` / `auth_password` | enabled, empty creds (guard refuses to start) |
+| CSRF tokens | (automatic) | required for POST/PUT/DELETE |
+| Rate limiting | `rate_limit_max` / `rate_limit_window_seconds` | 60 req / 60s per IP |
+| Security headers | (automatic) | CSP, X-Frame-Options, etc. |
+
+Secrets (`auth_username`, `auth_password`) are stored as `SECRET_FIELDS` and
+never exposed via `/api/config`. `web.js` refuses to bind unless `auth_enabled`
+is false or both credentials are set.
+
 ### Nginx proxy (Ultra.cc)
 
 Create `~/.apps/nginx/proxy.d/odfu-upload-helper.conf` (example; adjust the port
