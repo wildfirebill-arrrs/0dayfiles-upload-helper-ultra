@@ -21,7 +21,7 @@ const SECRET_FIELDS = new Set([
   "metadata.lastfm_api_key",
 ]);
 
-const SECTIONS = ["general", "torrent", "imagebb", "tracker", "synopsis", "metadata"];
+const SECTIONS = ["general", "torrent", "imagebb", "tracker", "synopsis", "metadata", "web"];
 
 /** Resolve the config file path. CWD config.toml wins; else platform config dir. */
 function configPath() {
@@ -178,12 +178,33 @@ function applyDefaults(cfg) {
   d("metadata", "discogs_token", "");
   d("metadata", "lastfm_api_key", "");
 
+  d("web", "bind", "127.0.0.1");
+  d("web", "port", 0);
+  d("web", "watch_folder", "");
+  d("web", "max_concurrent_jobs", 1);
+  d("web", "job_retention_minutes", 60);
+  d("web", "browse_root", "");
+
   // Coerce booleans from env strings.
   for (const s of SECTIONS) {
     for (const [k, v] of Object.entries(cfg[s])) {
       if (v === "true") cfg[s][k] = true;
       else if (v === "false") cfg[s][k] = false;
     }
+  }
+
+  // Coerce numeric port from env strings.
+  if (typeof cfg.web.port === "string") {
+    const n = Number(cfg.web.port);
+    if (!Number.isNaN(n)) cfg.web.port = n;
+  }
+  if (typeof cfg.web.max_concurrent_jobs === "string") {
+    const n = Number(cfg.web.max_concurrent_jobs);
+    if (!Number.isNaN(n)) cfg.web.max_concurrent_jobs = n;
+  }
+  if (typeof cfg.web.job_retention_minutes === "string") {
+    const n = Number(cfg.web.job_retention_minutes);
+    if (!Number.isNaN(n)) cfg.web.job_retention_minutes = n;
   }
 
   return cfg;

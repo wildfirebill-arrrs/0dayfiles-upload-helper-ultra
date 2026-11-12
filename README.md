@@ -66,6 +66,62 @@ node main.js --headless --input "Movie.Name.2024.1080p.BluRay.x264-GRP" --submit
 node main.js --help
 ```
 
+## Web UI (remote management)
+
+The app includes an Express web UI so you can manage releases from a browser
+instead of SSH. It runs on your assigned Ultra.cc 5-digit port, bound to
+`127.0.0.1` only; terminate HTTPS + auth with Nginx
+(see the Nginx notes below).
+
+### Start
+```bash
+# 1. Copy config and set your assigned 5-digit port
+cp config.toml.example config.toml
+# edit [web] -> port = <your-assigned-port>, e.g. 21345
+
+# 2. Start the web server
+npm run web
+# or: node web.js
+```
+
+### Features
+- **File browser** — navigate the server filesystem (`[web] browse_root`, defaults to CWD) and select a release folder or `.torrent` to process.
+- **Build torrent** — scan, hash, and build a private-flagged `.torrent` plus NFO/SFV/contact-sheet, with an option to submit to the tracker afterward.
+- **Watch folder** — site-made `.torrent` files are saved to `[web] watch_folder` so your torrent client (rTorrent, qBittorrent, etc.) can auto-load them.
+- **Jobs** — hashing large releases runs asynchronously; poll per-job progress and view logs.
+- **Releases** — list previously built releases (`.release.json`) and re-submit them.
+- **Config** — view masked config (secrets like the ImageBB key and API token are never exposed in plain text).
+
+### Config (`[web]` section)
+
+| Key | Meaning | Default |
+|-----|---------|---------|
+| `bind` | Bind address. Keep `127.0.0.1`; Nginx handles external access. | `127.0.0.1` |
+| `port` | Your assigned Ultra.cc 5-digit port. Required; never a default port. | `0` (refuses to start) |
+| `watch_folder` | Folder where built `.torrent` files are saved for auto-load. | `""` (beside source) |
+| `max_concurrent_jobs` | Parallel build jobs (hashing is IO-heavy on seedboxes). | `1` |
+| `job_retention_minutes` | How long finished job records stay in memory. | `60` |
+| `browse_root` | Root the file browser may traverse. Blank => CWD. | `""` |
+
+All `[web]` keys can be overridden via env vars, e.g. `ODFU_WEB_PORT=21345`.
+
+### Nginx proxy (Ultra.cc)
+
+Create `~/.apps/nginx/proxy.d/odfu-upload-helper.conf` (example; adjust the port):
+
+```nginx
+location /odfu/ {
+    proxy_pass http://127.0.0.1:21345/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    auth_basic "0dayfiles Upload Helper";
+    auth_basic_user_file /home/USER/.htpasswd;
+}
+```
+Then `~/.apps/nginx/nginx_proxy_reload`. Access via `https://<slot>.usbx.me/odfu/`.
+
 ### Flags
 
 | Flag | Meaning |

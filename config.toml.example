@@ -127,3 +127,18 @@ igdb_client_secret = ""
 imdb_api_key = ""
 discogs_token = ""
 lastfm_api_key = ""
+
+[web]
+# Bind address for the Express web UI. 127.0.0.1 only; Nginx terminates HTTPS/auth.
+bind = "127.0.0.1"
+# Assigned 5-digit Ultra.cc port. Never default ports (80/443/3000/8080).
+port = 0
+# Folder where site-made .torrent files are saved for torrent-client auto-load.
+# Blank => <release>-output/ beside the source (existing behavior).
+watch_folder = ""
+# Maximum concurrent build jobs (hashing is CPU/IO heavy on seedboxes).
+max_concurrent_jobs = 1
+# Job history retention (minutes) before in-memory job records are dropped.
+job_retention_minutes = 60
+# Root path the file browser may traverse. Blank => CWD (no traversal guard).
+browse_root = ""

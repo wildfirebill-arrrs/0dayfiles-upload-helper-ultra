@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0dayfiles Upload Helper — Web UI</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="bar">
+  <div class="brand">0dayfiles Upload Helper</div>
+  <div class="meta" id="meta">loading config…</div>
+  <div class="status" id="status">—</div>
+</header>
+
+<nav class="tabs">
+  <button class="tab active" data-tab="browser">File Browser</button>
+  <button class="tab" data-tab="build">Build Torrent</button>
+  <button class="tab" data-tab="jobs">Jobs</button>
+  <button class="tab" data-tab="releases">Releases</button>
+  <button class="tab" data-tab="config">Config</button>
+</nav>
+
+<main class="shell">
+  <!-- File Browser -->
+  <section id="panel-browser" class="panel">
+    <div class="toolbar">
+      <button id="btn-up">&#8593; Up</button>
+      <input type="text" id="path-input" placeholder="absolute path…" title="type a path and press Enter">
+      <button id="btn-go">Go</button>
+    </div>
+    <div class="breadcrumb" id="breadcrumb">/</div>
+    <table class="list" id="browser-list">
+      <thead><tr><th>Name</th><th>Type</th><th>Size</th><th>Modified</th><th>Action</th></tr></thead>
+      <tbody id="browser-tbody"></tbody>
+    </table>
+    <div class="hint" id="browser-hint">Select a release folder, then open Build Torrent.</div>
+  </section>
+
+  <!-- Build -->
+  <section id="panel-build" class="panel">
+    <div class="form">
+      <label>Source path</label>
+      <div class="input-row">
+        <input type="text" id="build-source" placeholder="/path/to/Release.Name.2024.1080p.BluRay.x264-GRP">
+        <button class="btn small" id="btn-pick-source">Use selected folder</button>
+      </div>
+      <div class="input-row">
+        <label class="checkbox"><input type="checkbox" id="build-cross-seed"> Cross-seed from existing .torrent</label>
+      </div>
+      <div class="input-row">
+        <label class="checkbox"><input type="checkbox" id="build-watch" checked> Save .torrent to watch folder</label>
+        <span class="note" id="watch-note">(auto-load for your torrent client)</span>
+      </div>
+      <div class="input-row">
+        <label class="checkbox"><input type="checkbox" id="build-submit"> Submit to tracker after build</label>
+        <span class="note">requires form mode + API token</span>
+      </div>
+      <div class="input-row">
+        <button class="btn primary" id="btn-build">Build</button>
+      </div>
+      <div class="hint" id="build-hint">Hashing large releases can take minutes; progress is tracked per job.</div>
+    </div>
+  </section>
+
+  <!-- Jobs -->
+  <section id="panel-jobs" class="panel">
+    <div class="toolbar"><button id="btn-refresh-jobs">Refresh</button></div>
+    <table class="list" id="jobs-table">
+      <thead><tr><th>Job</th><th>Type</th><th>Status</th><th>Progress</th><th>Source</th><th>Result</th><th>Logs</th></tr></thead>
+      <tbody id="jobs-tbody"></tbody>
+    </table>
+    <div class="empty" id="jobs-empty">No jobs yet.</div>
+  </section>
+
+  <!-- Releases -->
+  <section id="panel-releases" class="panel">
+    <div class="toolbar"><button id="btn-refresh-releases">Refresh</button></div>
+    <table class="list" id="releases-table">
+      <thead><tr><th>Title</th><th>Category</th><th>Size</th><th>State</th><th>Infohash</th><th>Action</th></tr></thead>
+      <tbody id="releases-tbody"></tbody>
+    </table>
+    <div class="empty" id="releases-empty">No releases found.</div>
+  </section>
+
+  <!-- Config -->
+  <section id="panel-config" class="panel">
+    <pre id="config-json">{ }</pre>
+  </section>
+</main>
+
+<footer class="bar">
+  <span id="footer-text">0dayfiles upload helper — Ultra.cc seedbox edition</span>
+</footer>
+
+<template id="job-row">
+  <tr>
+    <td class="job-id"></td>
+    <td class="job-type"></td>
+    <td><span class="pill"></span></td>
+    <td><div class="prog"><div class="prog-fill"></div></div> <span class="prog-pct">0%</span></td>
+    <td class="job-src"></td>
+    <td class="job-result"></td>
+    <td class="job-logs"></td>
+  </tr>
+</template>
+
+<script src="app.js"></script>
+</body>
+</html>
