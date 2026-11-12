@@ -14,7 +14,7 @@
     "start": "node main.js",
     "headless": "node main.js --headless",
     "web": "node web.js",
-    "test": "node --test"
+    "test": "node --test \"tests/**/*.js\""
   },
   "keywords": [
     "0dayfiles",
